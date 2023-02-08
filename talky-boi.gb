@@ -1,0 +1,247 @@
+#side talky-boi
+#author alex
+#date 3 Feb 2023
+#seed 1 2 2 2
+
+Type 1: Talker
+Type 2: Assassin
+
+I only want one talker at the start to ensure the memory
+initiation stuff occurs safely...
+
+;2023-02-04 this is really close but there are issues with
+; multiple talkers claiming the same destination, 
+; talkers overshooting their destination and bouncing back and forth,
+; the message not working when starting on the right side,
+; the assassins gathering food within the message area and
+; messing up the locations
+
+#color fbb
+
+#type talker
+#color fff
+
+Just sits there and reproduces, but sassier.
+
+#hardware
+processor 10
+engine .04
+solar-cells .8
+constructor .8
+energy 20 2
+armor 40
+
+#code
+
+;basically I want it to move into position and then be an algae
+;this will make it slightly worse than vanilla algae but the
+;assassins will make up for that
+
+;whether the message coordinates have been set up in memory
+#const init-address 1
+;whether the message is done
+#const status-address 2
+;the index of the next coordinate to grab
+#const progress-address 3
+
+;the origin for the message
+#const origin-address 4
+
+;the start of the message in memory
+#const message-address 6
+
+;the number of coordinates that need to be pulled
+#const message-length 43
+
+;the message will be `message-length` vectors starting at
+;`message-address` and ending at `message-address + 2 * `message-length - 1`
+
+; | 1        | 2            | 3              | 4        | 5        | 6 ...
+; | is init? | is finished? | progress index | origin x | origin y | message ...
+
+#vector dest
+;whether we're needed to form the message or not
+#var needed 1
+
+;     0  3  6  9 12 15 18 21 24 27 30 33 36 39 42 45
+
+;12   x     x        x  x  x     x     x     x     x
+;9    x     x        x           x     x     x     x
+;6    x     x        x  x  x     x     x     x  x
+;3    x     x              x     x     x     x     x
+;0    x  x  x        x  x  x     x  x  x     x     x
+
+;surely a better way to do this but whatever for now
+setup-memory:
+	1 init-address write
+	message-address progress-address write
+	position origin-address vwrite
+	;U
+	0 12 message-address vwrite
+	0 9 message-address 2 + vwrite
+	0 6 message-address 4 + vwrite
+	0 3 message-address 6 + vwrite
+	0 0 message-address 8 + vwrite
+	3 0 message-address 10 + vwrite
+	6 0 message-address 12 + vwrite
+	6 3 message-address 14 + vwrite
+	6 6 message-address 16 + vwrite
+	6 9 message-address 18 + vwrite
+	6 12 message-address 20 + vwrite
+
+	;S
+	21 12 message-address 22 + vwrite
+	18 12 message-address 24 + vwrite
+	15 12 message-address 26 + vwrite
+	15 9 message-address 28 + vwrite
+	15 6 message-address 30 + vwrite
+	18 6 message-address 32 + vwrite
+	21 6 message-address 34 + vwrite
+	21 3 message-address 36 + vwrite
+	21 0 message-address 38 + vwrite
+	18 0 message-address 40 + vwrite
+	15 0 message-address 42 + vwrite
+
+	;U
+	27 12 message-address 44 + vwrite
+	27 9 message-address 46 + vwrite
+	27 6 message-address 48 + vwrite
+	27 3 message-address 50 + vwrite
+	27 0 message-address 52 + vwrite
+	30 0 message-address 54 + vwrite
+	33 0 message-address 56 + vwrite
+	33 3 message-address 58 + vwrite
+	33 6 message-address 60 + vwrite
+	33 9 message-address 62 + vwrite
+	33 12 message-address 64 + vwrite
+
+	;K
+	39 12 message-address 66 + vwrite
+	39 9 message-address 68 + vwrite
+	39 6 message-address 70 + vwrite
+	39 3 message-address 72 + vwrite
+	39 0 message-address 74 + vwrite
+	42 6 message-address 76 + vwrite
+	45 3 message-address 78 + vwrite
+	45 0 message-address 80 + vwrite
+	45 9 message-address 82 + vwrite
+	45 12 message-address 84 + vwrite
+return
+
+; -- flag
+message-done:
+	;if progress > length * 2 - 1 + start
+	progress-address read 2 message-length * 1 - message-address + >
+return
+
+get-dest:
+	;get the origin address and add the offset to get destination
+	origin-address vread progress-address read vread v+ dest!
+	2 progress-address read + progress-address write 
+	message-done status-address write
+return
+
+; -- flag
+in-position:
+	position dest 1 in-range
+return
+
+#start
+init-address read setup-memory& nifc
+status-address read nif
+	get-dest
+else
+	0 needed!
+then
+do
+	needed in-position not and if
+		dest seek-location
+	then
+
+	energy 10 >= if
+		1 constructor-type!
+		constructor-max-rate constructor-rate!
+	else
+		0 constructor-rate!
+	then
+forever
+
+#type assassin
+#color fbb 
+
+#hardware
+processor 5
+engine .1
+solar-cells .2
+constructor 1
+energy 250 25
+armor 100
+
+;for gathering
+eater 2
+food-sensor 8
+
+;for killing algaes
+robot-sensor 10
+blaster 25 3 25
+
+#code
+;energy req for fighting
+#const fight-req 20
+
+;arbitrarily chose these, makes sense in my head for them
+;to be prime and distinct
+#const enemy-scan-freq 43
+#const food-scan-freq 41
+
+#vector dest
+
+new-dest:
+	0 world-width random 0 world-height random dest!
+return
+
+;-- flag
+should-fight:
+	energy armor min fight-req >
+return
+
+attack:
+	robot-position robot-velocity seek-moving-location
+	do
+		blaster-reload-time	periodic-robot-sensor if
+			robot-found if
+				robot-position robot-velocity lead-blaster
+				robot-position robot-velocity seek-moving-location
+			else
+				return
+			then
+		then
+	should-fight while-loop
+return
+
+#start
+new-dest
+0 robot-sensor-sees-friends!
+do
+	autoconstruct
+	;if we're healthy enough and there's a baddie around, we fight em
+	should-fight if enemy-scan-freq periodic-robot-sensor and-if robot-found and-if
+		69 print
+		attack
+	else
+		;otherwise we randomly wander for food
+		;could be some improvements here on spreading out 
+		food-scan-freq periodic-food-sensor drop
+		food-found if
+			food-position seek-location
+		else
+			dest seek-location
+			;& is addr, ifc calls addr if flag not zero
+			position dest 3 in-range new-dest& ifc
+		then
+	then
+	;repair armor if energy to spare
+	armor max-armor < energy fight-req > and repair-rate!
+forever
+
+#end
